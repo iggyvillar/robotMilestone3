@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/RobotControlServer.dir/RobotControlServer.cpp.o CMakeFiles/RobotControlServer.dir/MySocket.cpp.o CMakeFiles/RobotControlServer.dir/PktDef.cpp.o -o RobotControlServer  /usr/lib/x86_64-linux-gnu/libboost_system.so.1.83.0 -lpthread 
