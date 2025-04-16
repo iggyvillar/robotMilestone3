@@ -40,7 +40,7 @@ public:
 
         // Connect route
         CROW_ROUTE(app, "/connect")
-            .methods("POST"_method)
+        .methods("POST"_method)
         ([this](const crow::request& req) {
             auto x = crow::json::load(req.body);
             if (!x) {
@@ -52,7 +52,8 @@ public:
 
             try {
                 robotSocket = std::make_unique<MySocket>(
-                    SocketType::CLIENT, robotIP, robotPort, ConnectionType::TCP);                
+                    SocketType::CLIENT, robotIP, robotPort, ConnectionType::TCP, DEFAULT_SIZE
+                );
                 robotSocket->ConnectTCP();
                 isConnected = true;
                 return crow::response(200, "Connected successfully");
@@ -63,7 +64,7 @@ public:
 
         // Telecommand route
         CROW_ROUTE(app, "/telecommand")
-            .methods("PUT"_method)
+        .methods("PUT"_method)
         ([this](const crow::request& req) {
             if (!isConnected) {
                 return crow::response(400, "Not connected to robot");
@@ -89,7 +90,7 @@ public:
 
             cmdPacket.calcCRC();
             unsigned char* packet = cmdPacket.genPacket();
-            robotSocket->SendData(packet, cmdPacket.getLength() + HEADERSIZE + 1);
+            robotSocket->SendData(reinterpret_cast<const char*>(packet), cmdPacket.getLength() + HEADERSIZE + 1);
             delete[] packet;
 
             return crow::response(200, "Command sent successfully");
@@ -97,7 +98,7 @@ public:
 
         // Telemetry request route
         CROW_ROUTE(app, "/telemetry_request")
-            .methods("GET"_method)
+        .methods("GET"_method)
         ([this]() {
             if (!isConnected) {
                 return crow::response(400, "Not connected to robot");
@@ -107,12 +108,12 @@ public:
             cmdPacket.setCMD(CMDType::RESPONSE);
             cmdPacket.calcCRC();
             unsigned char* packet = cmdPacket.genPacket();
-            robotSocket->SendData(packet, cmdPacket.getLength() + HEADERSIZE + 1);
+            robotSocket->SendData(reinterpret_cast<const char*>(packet), cmdPacket.getLength() + HEADERSIZE + 1);
             delete[] packet;
 
             // Receive response
             unsigned char buffer[1024];
-            int bytesReceived = robotSocket->GetData(buffer, 1024);
+            int bytesReceived = robotSocket->GetData(reinterpret_cast<char*>(buffer));
             if (bytesReceived > 0) {
                 PktDef responsePacket(buffer);
                 if (responsePacket.checkCRC(buffer, bytesReceived)) {
@@ -140,4 +141,4 @@ int main() {
     RobotControlServer server;
     server.run();
     return 0;
-} 
+}

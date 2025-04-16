@@ -11,64 +11,64 @@ MySocket::MySocket(SocketType type, std::string ip, unsigned int port, Connectio
     memset(Buffer, 0, MaxSize);
 
     if (connectionType == ConnectionType::TCP)
-        ConnectionSocket = socket(AF_INET, SOCK_STREAM, 0);
+        connectionSocket = socket(AF_INET, SOCK_STREAM, 0);
     else
-        ConnectionSocket = socket(AF_INET, SOCK_DGRAM, 0);
+        connectionSocket = socket(AF_INET, SOCK_DGRAM, 0);
 
     SvrAddr.sin_family = AF_INET;
     SvrAddr.sin_port = htons(port);
     inet_pton(AF_INET, ip.c_str(), &SvrAddr.sin_addr);
 
     if (type == SocketType::SERVER && connectionType == ConnectionType::TCP) {
-        WelcomeSocket = socket(AF_INET, SOCK_STREAM, 0);
-        bind(WelcomeSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
-        listen(WelcomeSocket, SOMAXCONN);
+        welcomeSocket = socket(AF_INET, SOCK_STREAM, 0);
+        bind(welcomeSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
+        listen(welcomeSocket, SOMAXCONN);
     }
 }
 
 MySocket::~MySocket() {
     delete[] Buffer;
-    close(ConnectionSocket);
+    close(connectionSocket);
     if (mySocket == SocketType::SERVER && connectionType == ConnectionType::TCP)
-        close(WelcomeSocket);
+        close(welcomeSocket);
 }
 
 void MySocket::ConnectTCP() {
     if (connectionType != ConnectionType::TCP) return;
 
     if (mySocket == SocketType::CLIENT) {
-        connect(ConnectionSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
+        connect(connectionSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
         bTCPConnect = true;
     }
     else {
         socklen_t size = sizeof(SvrAddr);
-        ConnectionSocket = accept(WelcomeSocket, (struct sockaddr*)&SvrAddr, &size);
+        connectionSocket = accept(welcomeSocket, (struct sockaddr*)&SvrAddr, &size);
         bTCPConnect = true;
     }
 }
 
 void MySocket::DisconnectTCP() {
-    close(ConnectionSocket);
+    close(connectionSocket);
     bTCPConnect = false;
 }
 
 void MySocket::SendData(const char* data, int size) {
     if (connectionType == ConnectionType::TCP) {
-        send(ConnectionSocket, data, size, 0);
+        send(connectionSocket, data, size, 0);
     }
     else {
-        sendto(ConnectionSocket, data, size, 0, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
+        sendto(connectionSocket, data, size, 0, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
     }
 }
 
 int MySocket::GetData(char* dest) {
     int bytes = 0;
     if (connectionType == ConnectionType::TCP) {
-        bytes = recv(ConnectionSocket, Buffer, MaxSize, 0);
+        bytes = recv(connectionSocket, Buffer, MaxSize, 0);
     }
     else {
         socklen_t addrLen = sizeof(SvrAddr);
-        bytes = recvfrom(ConnectionSocket, Buffer, MaxSize, 0, (struct sockaddr*)&SvrAddr, &addrLen);
+        bytes = recvfrom(connectionSocket, Buffer, MaxSize, 0, (struct sockaddr*)&SvrAddr, &addrLen);
     }
     memcpy(dest, Buffer, bytes);
     return bytes;
