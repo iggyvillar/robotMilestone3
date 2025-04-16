@@ -51,7 +51,9 @@ public:
             robotPort = x["port"].i();
 
             try {
-                robotSocket = std::make_unique<MySocket>(robotIP, robotPort);
+                robotSocket = std::make_unique<MySocket>(
+                    SocketType::CLIENT, robotIP, robotPort, ConnectionType::TCP);                
+                robotSocket->ConnectTCP();
                 isConnected = true;
                 return crow::response(200, "Connected successfully");
             } catch (const std::exception& e) {

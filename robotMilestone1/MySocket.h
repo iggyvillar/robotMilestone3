@@ -1,7 +1,10 @@
 #pragma once
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+
 #include <string>
 
 #pragma comment(lib, "Ws2_32.lib")
@@ -14,9 +17,9 @@ const int DEFAULT_SIZE = 1024;
 class MySocket {
 private:
     char* Buffer;
-    SOCKET WelcomeSocket;
-    SOCKET ConnectionSocket;
-    sockaddr_in SvrAddr;
+    int welcomeSocket;
+    int connectionSocket;
+    struct sockaddr_in SvrAddr;
     SocketType mySocket;
     std::string IPAddr;
     int Port;
