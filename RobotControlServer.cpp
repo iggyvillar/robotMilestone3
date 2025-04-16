@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <filesystem>
+#include <fstream>
 
 class RobotControlServer {
 private:
@@ -32,10 +33,19 @@ public:
             }
         });
 
-        // Root route - serves the main GUI
+        // Serve index.html directly
         CROW_ROUTE(app, "/")
-        ([]() {
-            return crow::mustache::load("index.html").render();
+        ([](const crow::request&, crow::response& res){
+            std::ifstream file("/app/index.html");
+            if (file) {
+                std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+                res.set_header("Content-Type", "text/html");
+                res.write(content);
+            } else {
+                res.code = 404;
+                res.write("index.html not found");
+            }
+            res.end();
         });
 
         // Connect route
@@ -75,7 +85,6 @@ public:
                 return crow::response(400, "Invalid JSON");
             }
 
-            // Create and send command packet
             PktDef cmdPacket;
             if (x["command"].s() == "drive") {
                 cmdPacket.setCMD(CMDType::DRIVE);
@@ -111,7 +120,6 @@ public:
             robotSocket->SendData(reinterpret_cast<const char*>(packet), cmdPacket.getLength() + HEADERSIZE + 1);
             delete[] packet;
 
-            // Receive response
             unsigned char buffer[1024];
             int bytesReceived = robotSocket->GetData(reinterpret_cast<char*>(buffer));
             if (bytesReceived > 0) {
