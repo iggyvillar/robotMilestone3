@@ -21,9 +21,10 @@ public:
 
     void setupRoutes() {
         // Serve static files from the public directory
+        /*
         CROW_ROUTE(app, "/public/<path>")
         ([](const crow::request& req, crow::response& res, std::string path) {
-            std::string full_path = "public/" + path;
+            std::string full_path = "/app/public/" + path;
             if (std::filesystem::exists(full_path)) {
                 res.set_static_file_info(full_path);
                 res.end();
@@ -31,7 +32,25 @@ public:
                 res.code = 404;
                 res.end("File not found");
             }
+        });*/
+
+        CROW_ROUTE(app, "/public/<path>")
+        ([](const crow::request& req, crow::response& res, std::string path) {
+            std::string full_path = "/app/public/" + path;
+
+            std::cerr << "[DEBUG] Static file requested: " << full_path << std::endl;
+
+            if (std::filesystem::exists(full_path)) {
+                res.set_static_file_info(full_path);
+                res.end();
+            } else {
+                res.code = 404;
+                res.write("File not found: " + full_path);
+                res.end();
+            }
         });
+
+
 
         // Serve index.html directly
         CROW_ROUTE(app, "/")

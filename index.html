@@ -4,7 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Robot Control GUI</title>
-    <link rel="stylesheet" href="public/css/styles.css">
+    <style>
+        body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f0f0f0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.connection-panel {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.control-panel {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.telemetry-panel {
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+input {
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.status {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.error {
+    background-color: #f8d7da;
+    color: #721c24;
+} 
+    </style>
 </head>
 <body>
     <div class="container">
@@ -50,6 +121,129 @@
         </div>
     </div>
 
-    <script src="public/js/robot-control.js"></script>
+    <script src="/public/js/robot-control.js"></script>
+    <script>
+        let isConnected = false;
+    
+        async function connect() {
+            const ip = document.getElementById('robotIP').value;
+            const port = document.getElementById('robotPort').value;
+    
+            try {
+                const response = await fetch('/connect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ip: ip,
+                        port: parseInt(port)
+                    })
+                });
+    
+                const data = await response.json();
+                const statusDiv = document.getElementById('connectionStatus');
+    
+                if (response.ok) {
+                    isConnected = true;
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = 'Connected successfully';
+                } else {
+                    statusDiv.className = 'status error';
+                    statusDiv.textContent = 'Connection failed: ' + data;
+                }
+            } catch (error) {
+                document.getElementById('connectionStatus').className = 'status error';
+                document.getElementById('connectionStatus').textContent = 'Connection failed: ' + error;
+            }
+        }
+    
+        async function drive(direction) {
+            if (!isConnected) {
+                alert('Please connect to the robot first');
+                return;
+            }
+    
+            const duration = document.getElementById('duration').value;
+            const speed = document.getElementById('speed').value;
+            const directionMap = {
+                'forward': 1,
+                'backward': 2,
+                'left': 3,
+                'right': 4
+            };
+    
+            try {
+                const response = await fetch('/telecommand', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        command: 'drive',
+                        direction: directionMap[direction],
+                        duration: parseInt(duration),
+                        speed: parseInt(speed)
+                    })
+                });
+    
+                if (!response.ok) {
+                    throw new Error('Command failed');
+                }
+            } catch (error) {
+                alert('Error sending command: ' + error);
+            }
+        }
+    
+        async function sleep() {
+            if (!isConnected) {
+                alert('Please connect to the robot first');
+                return;
+            }
+    
+            try {
+                const response = await fetch('/telecommand', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        command: 'sleep'
+                    })
+                });
+    
+                if (!response.ok) {
+                    throw new Error('Sleep command failed');
+                }
+            } catch (error) {
+                alert('Error sending sleep command: ' + error);
+            }
+        }
+    
+        async function requestTelemetry() {
+            if (!isConnected) {
+                alert('Please connect to the robot first');
+                return;
+            }
+    
+            try {
+                const response = await fetch('/telemetry_request');
+                const data = await response.json();
+    
+                const telemetryDiv = document.getElementById('telemetryData');
+                telemetryDiv.innerHTML = `
+                    <p>Last Packet Counter: ${data.last_pkt_counter}</p>
+                    <p>Current Grade: ${data.current_grade}</p>
+                    <p>Hit Count: ${data.hit_count}</p>
+                    <p>Last Command: ${data.last_cmd}</p>
+                    <p>Last Command Value: ${data.last_cmd_value}</p>
+                    <p>Last Command Speed: ${data.last_cmd_speed}</p>
+                `;
+            } catch (error) {
+                alert('Error getting telemetry: ' + error);
+            }
+        }
+    </script>
+    
 </body>
 </html> 
