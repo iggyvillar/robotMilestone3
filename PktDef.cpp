@@ -117,6 +117,31 @@ bool PktDef::checkCRC(unsigned char* buffer, unsigned char size) {
 }
 
 void PktDef::calcCRC() {
+    int size = cmdPacket.header.length - 1; // exclude the CRC byte
+    unsigned char* temp = new unsigned char[size];
+
+    // copy header
+    memcpy(temp, &cmdPacket.header, HEADERSIZE);
+
+    // copy body
+    if (cmdPacket.Data != nullptr) {
+        memcpy(temp + HEADERSIZE, cmdPacket.Data, cmdPacket.header.length - HEADERSIZE - 1);
+    }
+
+    uint8_t crc = 0;
+    for (int i = 0; i < size; ++i) {
+        std::bitset<8> bits(temp[i]);
+        crc += bits.count();
+    }
+
+    delete[] temp;
+    cmdPacket.CRC = crc;
+    std::cout << "[calcCRC()] Final CRC = " << (int)crc << std::endl;
+}
+
+
+/*
+void PktDef::calcCRC() {
     unsigned char crc = 0;
 
     unsigned char* headerBytes = (unsigned char*)&cmdPacket.header;
@@ -134,7 +159,7 @@ void PktDef::calcCRC() {
 
     // Debug output to confirm it's being called
     std::cout << "[calcCRC()] Final CRC = " << (int)crc << std::endl;
-}
+}*/
 
 
 unsigned char* PktDef::genPacket() {
