@@ -13,25 +13,27 @@ const unsigned char FORWARD = 1;
 const unsigned char BACKWARD = 2;
 const unsigned char RIGHT = 3;
 const unsigned char LEFT = 4;
-const unsigned char HEADERSIZE = 3;		//headersize = PktCount(2 bytes) + 1 byte flag = 3
+
+const unsigned char HEADERSIZE = 4;		//updated
 
 //header
 struct Header {
 	unsigned short int PktCount;
 	struct {
-		unsigned char drive : 1;
-		unsigned char status : 1;
-		unsigned char sleep : 1;
-		unsigned char ack : 1;
-		unsigned char padding : 4;
+		uint8_t drive : 1;
+		uint8_t status : 1;
+		uint8_t sleep : 1;
+		uint8_t ack : 1;
+		uint8_t padding : 4;
 	} cmdFlags;
+	uint8_t length;
 };
 
 // drivebody struct
 struct driveBody {
-	unsigned char direction;
-	unsigned char duration;
-	unsigned char speed;
+	uint8_t direction;
+	uint8_t duration;
+	uint8_t speed;
 };
 
 // telemetry struct
@@ -47,10 +49,9 @@ struct telemetry {
 class PktDef {
 private:
 	struct CmdPacket {
-		Header header;
-		unsigned char length;  
+		Header header; 
 		unsigned char* Data;
-		unsigned char CRC;
+		uint8_t CRC;
 	}cmdPacket;
 
 	unsigned char* RawBuffer;
