@@ -23,7 +23,6 @@ string loadFile(const string& path) {
     return "404 - File Not Found";
 }
 
-// Send a packet to robot using your PktDef format
 void sendPacket(CMDType cmd, unsigned char* data = nullptr, int size = 0) {
     PktDef pkt;
     pkt.setPktCount(++packetCount);
@@ -36,7 +35,7 @@ void sendPacket(CMDType cmd, unsigned char* data = nullptr, int size = 0) {
 
 
     int totalSize = pkt.getLength();
-    /*
+    /* ignore debugging purposes
     cout << "[SENDING] Command: " << (int)cmd
          << ", Total Size: " << totalSize
          << ", CRC: " << (int)buffer[totalSize - 1] << endl;
