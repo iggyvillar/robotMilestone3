@@ -42,21 +42,23 @@ PktDef::~PktDef() {
 }
 
 void PktDef::setCMD(CMDType cmd) {
-	cmdPacket.header.cmdFlags.drive = 0;
-	cmdPacket.header.cmdFlags.status = 0;
-	cmdPacket.header.cmdFlags.sleep = 0;
+    cmdPacket.header.cmdFlags.drive = 0;
+    cmdPacket.header.cmdFlags.status = 0;
+    cmdPacket.header.cmdFlags.sleep = 0;
 
-	switch (cmd) {
-	case CMDType::DRIVE:
-		cmdPacket.header.cmdFlags.drive = 1;
-		break;
-	case CMDType::SLEEP:
-		cmdPacket.header.cmdFlags.sleep = 1;
-		break;
-	case CMDType::RESPONSE:
-		cmdPacket.header.cmdFlags.status = 1;
-		break;
-	}
+    switch (cmd) {
+        case CMDType::DRIVE:
+            cmdPacket.header.cmdFlags.drive = 1;
+            break;
+        case CMDType::SLEEP:
+            cmdPacket.header.cmdFlags.sleep = 1;
+            cmdPacket.header.length = HEADERSIZE + 1;  // header + CRC
+            break;
+        case CMDType::RESPONSE:
+            cmdPacket.header.cmdFlags.status = 1;
+            cmdPacket.header.length = HEADERSIZE + 1;  // header + CRC
+            break;
+    }
 }
 
 void PktDef::setBodyData(unsigned char* data, unsigned char size) {
@@ -69,16 +71,6 @@ void PktDef::setBodyData(unsigned char* data, unsigned char size) {
     cmdPacket.header.length = HEADERSIZE + size + 1;  // body + header + CRC
 }
 
-
-/*
-void PktDef::setBodyData(unsigned char* data, unsigned char size) {
-	if (cmdPacket.Data != nullptr) {
-		delete[] cmdPacket.Data;
-	}
-	cmdPacket.Data = new unsigned char[size];
-	memcpy(cmdPacket.Data, data, size);
-	cmdPacket.header.length = size;
-}*/
 
 void PktDef::setPktCount(unsigned short int size) {
 	cmdPacket.header.PktCount = size + 1;
@@ -140,47 +132,26 @@ void PktDef::calcCRC() {
 }
 
 
-/*
-void PktDef::calcCRC() {
-    unsigned char crc = 0;
-
-    unsigned char* headerBytes = (unsigned char*)&cmdPacket.header;
-    for (int i = 0; i < HEADERSIZE; i++) {
-        crc += std::bitset<8>(headerBytes[i]).count();
-    }
-
-    if (cmdPacket.Data != nullptr) {
-        for (int i = 0; i < cmdPacket.header.length; i++) {
-            crc += std::bitset<8>(cmdPacket.Data[i]).count();
-        }
-    }
-
-    cmdPacket.CRC = crc;
-
-    // Debug output to confirm it's being called
-    std::cout << "[calcCRC()] Final CRC = " << (int)crc << std::endl;
-}*/
-
-
 unsigned char* PktDef::genPacket() {
     if (RawBuffer != nullptr)
         delete[] RawBuffer;
 
     int totalSize = cmdPacket.header.length;
+    if (totalSize < HEADERSIZE + 1)  // safety: header + CRC minimum
+        totalSize = HEADERSIZE + 1;
+
     RawBuffer = new unsigned char[totalSize];
 
-    // Write header first
+    // Write header
     memcpy(RawBuffer, &cmdPacket.header, HEADERSIZE);
 
-    // Then the body
-    if (cmdPacket.Data != nullptr) {
+    // Only copy body if it's present
+    if (cmdPacket.Data != nullptr && totalSize > HEADERSIZE + 1) {
         memcpy(RawBuffer + HEADERSIZE, cmdPacket.Data, totalSize - HEADERSIZE - 1);
     }
 
-    // Now calculate CRC AFTER body is copied
+    // Calculate and write CRC
     calcCRC();
-
-    // ✅ Now insert CRC at very end
     RawBuffer[totalSize - 1] = cmdPacket.CRC;
 
     return RawBuffer;

@@ -34,9 +34,9 @@ void sendPacket(CMDType cmd, unsigned char* data = nullptr, int size = 0) {
 
     unsigned char* buffer = pkt.genPacket();
 
-    // ✅ Your pkt.getLength() is now total length
-    int totalSize = pkt.getLength();
 
+    int totalSize = pkt.getLength();
+    /*
     cout << "[SENDING] Command: " << (int)cmd
          << ", Total Size: " << totalSize
          << ", CRC: " << (int)buffer[totalSize - 1] << endl;
@@ -46,7 +46,7 @@ void sendPacket(CMDType cmd, unsigned char* data = nullptr, int size = 0) {
         printf("%02X ", buffer[i]);
     }
     cout << endl;
-
+    */
     socketPtr->SendData((char*)buffer, totalSize);
 }
 
