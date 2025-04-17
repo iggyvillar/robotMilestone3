@@ -1,93 +1,212 @@
 #include "MySocket.h"
-#include <iostream>
 #include <cstring>
-#include <unistd.h> 
+#include <stdexcept>
+#include <iostream>
 
-MySocket::MySocket(SocketType type, std::string ip, unsigned int port, ConnectionType conn, unsigned int size)
-    : mySocket(type), IPAddr(ip), Port(port), connectionType(conn), bTCPConnect(false)
-{
-    MaxSize = (size > 0) ? size : DEFAULT_SIZE;
+#ifdef _WIN32
+#include <winsock2.h>
+#else
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#define SOCKET int
+#define INVALID_SOCKET -1
+#define SOCKET_ERROR -1
+#endif
+
+MySocket::MySocket(SocketType socketType, std::string ipAddress, unsigned int port,
+    ConnectionType connType, unsigned int bufferSize)
+    : mySocket(socketType), IPAddr(ipAddress), Port(port),
+    connectionType(connType), bTCPConnect(false) {
+
+    if (bufferSize <= 0) {
+        MaxSize = DEFAULT_SIZE;
+    }
+    else {
+        MaxSize = bufferSize;
+    }
+
     Buffer = new char[MaxSize];
-    memset(Buffer, 0, MaxSize);
 
-    if (connectionType == ConnectionType::TCP)
-        connectionSocket = socket(AF_INET, SOCK_STREAM, 0);
-    else
-        connectionSocket = socket(AF_INET, SOCK_DGRAM, 0);
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        throw std::runtime_error("WSAStartup failed");
+    }
+#endif
 
-    SvrAddr.sin_family = AF_INET;
-    SvrAddr.sin_port = htons(port);
-    inet_pton(AF_INET, ip.c_str(), &SvrAddr.sin_addr);
+    if (connectionType == ConnectionType::TCP && socketType == SocketType::SERVER) {
+        welcomeSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (welcomeSocket == INVALID_SOCKET) {
+            throw std::runtime_error("Failed to create welcome socket");
+        }
 
-    if (type == SocketType::SERVER && connectionType == ConnectionType::TCP) {
-        welcomeSocket = socket(AF_INET, SOCK_STREAM, 0);
-        bind(welcomeSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
-        listen(welcomeSocket, SOMAXCONN);
+        SvrAddr.sin_family = AF_INET;
+        SvrAddr.sin_addr.s_addr = INADDR_ANY;
+        SvrAddr.sin_port = htons(port);
+
+        if (bind(welcomeSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr)) == SOCKET_ERROR) {
+            throw std::runtime_error("Failed to bind welcome socket");
+        }
+
+        if (listen(welcomeSocket, 1) == SOCKET_ERROR) {
+            throw std::runtime_error("Failed to listen on welcome socket");
+        }
+    }
+    else {
+        connectionSocket = socket(AF_INET,
+            (connectionType == ConnectionType::TCP) ? SOCK_STREAM : SOCK_DGRAM,
+            (connectionType == ConnectionType::TCP) ? IPPROTO_TCP : IPPROTO_UDP);
+        if (connectionSocket == INVALID_SOCKET) {
+            throw std::runtime_error("Failed to create connection socket");
+        }
+
+        SvrAddr.sin_family = AF_INET;
+        SvrAddr.sin_port = htons(port);
+
+        if (ipAddress.empty() || ipAddress == "0.0.0.0") {
+            SvrAddr.sin_addr.s_addr = INADDR_ANY;
+        }
+        else {
+            if (inet_pton(AF_INET, ipAddress.c_str(), &SvrAddr.sin_addr) <= 0) {
+                throw std::runtime_error("Invalid IP address");
+            }
+        }
+
+        if (socketType == SocketType::SERVER && connectionType == ConnectionType::UDP) {
+            if (bind(connectionSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr)) == SOCKET_ERROR) {
+                throw std::runtime_error("Failed to bind UDP socket");
+            }
+        }
     }
 }
 
 MySocket::~MySocket() {
-    delete[] Buffer;
-    close(connectionSocket);
-    if (mySocket == SocketType::SERVER && connectionType == ConnectionType::TCP)
+    if (bTCPConnect) {
+        DisconnectTCP();
+    }
+
+    if (connectionType == ConnectionType::TCP && mySocket == SocketType::SERVER) {
+#ifdef _WIN32
+        closesocket(welcomeSocket);
+#else
         close(welcomeSocket);
+#endif
+    }
+
+#ifdef _WIN32
+    closesocket(connectionSocket);
+    WSACleanup();
+#else
+    close(connectionSocket);
+#endif
+
+    delete[] Buffer;
 }
 
 void MySocket::ConnectTCP() {
-    if (connectionType != ConnectionType::TCP) return;
+    if (connectionType != ConnectionType::TCP) {
+        throw std::runtime_error("Cannot perform TCP operations on UDP socket");
+    }
 
-    if (mySocket == SocketType::CLIENT) {
-        connect(connectionSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
-        bTCPConnect = true;
+    if (mySocket == SocketType::SERVER) {
+        sockaddr_in CltAddr;
+        int addrLen = sizeof(CltAddr);
+        connectionSocket = accept(welcomeSocket, (struct sockaddr*)&CltAddr, &addrLen);
+        if (connectionSocket == INVALID_SOCKET) {
+            throw std::runtime_error("Failed to accept connection");
+        }
     }
     else {
-        socklen_t size = sizeof(SvrAddr);
-        connectionSocket = accept(welcomeSocket, (struct sockaddr*)&SvrAddr, &size);
-        bTCPConnect = true;
+        if (connect(connectionSocket, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr)) == SOCKET_ERROR) {
+            throw std::runtime_error("Failed to connect to server");
+        }
     }
+    bTCPConnect = true;
 }
 
 void MySocket::DisconnectTCP() {
-    close(connectionSocket);
-    bTCPConnect = false;
+    if (connectionType != ConnectionType::TCP) {
+        throw std::runtime_error("Cannot perform TCP operations on UDP socket");
+    }
+
+    if (bTCPConnect) {
+#ifdef _WIN32
+        closesocket(connectionSocket);
+#else
+        close(connectionSocket);
+#endif
+        bTCPConnect = false;
+    }
 }
 
-void MySocket::SendData(const char* data, int size) {
+void MySocket::SendData(const char* rawData, int bytesToSend) {
+    if (bytesToSend <= 0 || bytesToSend > MaxSize) {
+        throw std::runtime_error("Invalid data size");
+    }
+
+    if (connectionType == ConnectionType::TCP && !bTCPConnect) {
+        throw std::runtime_error("TCP connection not established");
+    }
+
+    int bytesSent = 0;
     if (connectionType == ConnectionType::TCP) {
-        send(connectionSocket, data, size, 0);
+        bytesSent = send(connectionSocket, rawData, bytesToSend, 0);
     }
     else {
-        sendto(connectionSocket, data, size, 0, (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
+        bytesSent = sendto(connectionSocket, rawData, bytesToSend, 0,
+            (struct sockaddr*)&SvrAddr, sizeof(SvrAddr));
+    }
+
+    if (bytesSent == SOCKET_ERROR) {
+        throw std::runtime_error("Failed to send data");
     }
 }
 
-int MySocket::GetData(char* dest) {
-    int bytes = 0;
+int MySocket::GetData(char* destination) {
+    if (connectionType == ConnectionType::TCP && !bTCPConnect) {
+        throw std::runtime_error("TCP connection not established");
+    }
+
+    int bytesReceived = 0;
     if (connectionType == ConnectionType::TCP) {
-        bytes = recv(connectionSocket, Buffer, MaxSize, 0);
+        bytesReceived = recv(connectionSocket, Buffer, MaxSize, 0);
     }
     else {
-        socklen_t addrLen = sizeof(SvrAddr);
-        bytes = recvfrom(connectionSocket, Buffer, MaxSize, 0, (struct sockaddr*)&SvrAddr, &addrLen);
+        sockaddr_in senderAddr;
+        socklen_t senderAddrSize = sizeof(senderAddr);
+        bytesReceived = recvfrom(connectionSocket, Buffer, MaxSize, 0,
+            (struct sockaddr*)&senderAddr, &senderAddrSize);
     }
-    memcpy(dest, Buffer, bytes);
-    return bytes;
+
+    if (bytesReceived == SOCKET_ERROR) {
+        throw std::runtime_error("Failed to receive data");
+    }
+
+    if (bytesReceived > 0) {
+        memcpy(destination, Buffer, bytesReceived);
+    }
+
+    return bytesReceived;
 }
 
 std::string MySocket::GetIPAddr() const {
     return IPAddr;
 }
 
-void MySocket::SetIPAddr(std::string ip) {
-    if (bTCPConnect) return;
-    IPAddr = ip;
-    inet_pton(AF_INET, ip.c_str(), &SvrAddr.sin_addr);
+void MySocket::SetIPAddr(std::string ipAddress) {
+    if (bTCPConnect || (connectionType == ConnectionType::TCP && mySocket == SocketType::SERVER && welcomeSocket != INVALID_SOCKET)) {
+        throw std::runtime_error("Cannot change IP address after connection is established");
+    }
+    IPAddr = ipAddress;
 }
 
 void MySocket::SetPort(int port) {
-    if (bTCPConnect) return;
+    if (bTCPConnect || (connectionType == ConnectionType::TCP && mySocket == SocketType::SERVER && welcomeSocket != INVALID_SOCKET)) {
+        throw std::runtime_error("Cannot change port after connection is established");
+    }
     Port = port;
-    SvrAddr.sin_port = htons(port);
 }
 
 int MySocket::GetPort() const {
@@ -98,8 +217,9 @@ SocketType MySocket::GetType() const {
     return mySocket;
 }
 
-void MySocket::SetType(SocketType type) {
-    if (bTCPConnect) return;
-    mySocket = type;
+void MySocket::SetType(SocketType socketType) {
+    if (bTCPConnect || (connectionType == ConnectionType::TCP && mySocket == SocketType::SERVER && welcomeSocket != INVALID_SOCKET)) {
+        throw std::runtime_error("Cannot change socket type after connection is established");
+    }
+    mySocket = socketType;
 }
-

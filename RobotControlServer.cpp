@@ -1,150 +1,170 @@
-#define CROW_MAIN
-
-#include "crow_all.h"
-#include "PktDef.h"
+#include <crow.h>
+#include <crow/middlewares/cors.h>
 #include "MySocket.h"
-#include <fstream>
-#include <sstream>
-#include <iostream>
-using namespace std;
+#include "PktDef.h"
+#include <thread>
+#include <mutex>
 
-// Utility function to serve files
-void sendFile(crow::response& res, const string& path, const string& contentType) {
-    ifstream in("/app/public/" + path, ifstream::in);
-    if (in) {
-        ostringstream contents;
-        contents << in.rdbuf();
-        in.close();
-        res.set_header("Content-Type", contentType);
-        res.write(contents.str());
-    } else {
-        res.code = 404;
-        res.write("404 - Not found");
-    }
-    res.end();
-}
+std::mutex socketMutex;
+MySocket* robotSocket = nullptr;
+unsigned short pktCounter = 0;
 
-// Specific file senders
-void sendHtml(crow::response& res, const string& filename) {
-    sendFile(res, filename + ".html", "text/html");
-}
+void initializeWebServer(crow::App<crow::CORSHandler>& app) {
+    CROW_ROUTE(app, "/")([]() {
+        crow::mustache::context ctx;
+        return crow::mustache::load("index.html").render();
+        });
 
-void sendScript(crow::response& res, const string& filename) {
-    sendFile(res, "js/" + filename, "application/javascript");
-}
+    CROW_ROUTE(app, "/connect").methods("POST"_method)
+        ([](const crow::request& req) {
+        auto x = crow::json::load(req.body);
+        if (!x) {
+            return crow::response(400, "Invalid JSON");
+        }
 
-void sendStyle(crow::response& res, const string& filename) {
-    sendFile(res, "css/" + filename, "text/css");
+        std::string ip = x["ip"].s();
+        int port = x["port"].i();
+
+        std::lock_guard<std::mutex> lock(socketMutex);
+        if (robotSocket != nullptr) {
+            delete robotSocket;
+        }
+
+        try {
+            robotSocket = new MySocket(SocketType::CLIENT, ip, port, ConnectionType::UDP, 1024);
+            return crow::response(200, "Connected to robot at " + ip + ":" + std::to_string(port));
+        }
+        catch (const std::exception& e) {
+            return crow::response(500, std::string("Connection failed: ") + e.what());
+        }
+            });
+
+    CROW_ROUTE(app, "/telecommand").methods("PUT"_method)
+        ([](const crow::request& req) {
+        if (robotSocket == nullptr) {
+            return crow::response(400, "Not connected to robot");
+        }
+
+        auto x = crow::json::load(req.body);
+        if (!x) {
+            return crow::response(400, "Invalid JSON");
+        }
+
+        std::string command = x["command"].s();
+        PktDef packet;
+
+        try {
+            if (command == "drive") {
+                unsigned char direction = x["direction"].i();
+                unsigned char duration = x["duration"].i();
+                unsigned char speed = x["speed"].i();
+
+                // Validate speed
+                if (speed < 80) speed = 80;
+                if (speed > 100) speed = 100;
+
+                packet.setCMD(CMDType::DRIVE);
+                packet.setPktCount(++pktCounter);
+
+                driveBody body;
+                body.direction = direction;
+                body.duration = duration;
+                body.speed = speed;
+
+                packet.setBodyData(reinterpret_cast<unsigned char*>(&body), sizeof(driveBody));
+            }
+            else if (command == "sleep") {
+                packet.setCMD(CMDType::SLEEP);
+                packet.setPktCount(++pktCounter);
+            }
+            else {
+                return crow::response(400, "Invalid command");
+            }
+
+            packet.calcCRC();
+            unsigned char* rawPacket = packet.genPacket();
+
+            std::lock_guard<std::mutex> lock(socketMutex);
+            robotSocket->SendData(reinterpret_cast<const char*>(rawPacket), packet.getLength());
+
+            // Wait for ACK
+            char ackBuffer[1024];
+            int bytesReceived = robotSocket->GetData(ackBuffer);
+            if (bytesReceived > 0) {
+                PktDef ackPacket(reinterpret_cast<unsigned char*>(ackBuffer));
+                if (ackPacket.getAck() && ackPacket.checkCRC(ackBuffer, bytesReceived)) {
+                    return crow::response(200, "Command acknowledged");
+                }
+            }
+            return crow::response(500, "No ACK received from robot");
+        }
+        catch (const std::exception& e) {
+            return crow::response(500, std::string("Command failed: ") + e.what());
+        }
+            });
+
+    CROW_ROUTE(app, "/telemetry_request").methods("GET"_method)
+        ([]() {
+        if (robotSocket == nullptr) {
+            return crow::response(400, "Not connected to robot");
+        }
+
+        try {
+            PktDef packet;
+            packet.setCMD(CMDType::RESPONSE);
+            packet.setPktCount(++pktCounter);
+            packet.calcCRC();
+            unsigned char* rawPacket = packet.genPacket();
+
+            std::lock_guard<std::mutex> lock(socketMutex);
+            robotSocket->SendData(reinterpret_cast<const char*>(rawPacket), packet.getLength());
+
+            // Wait for telemetry response
+            char telemetryBuffer[1024];
+            int bytesReceived = robotSocket->GetData(telemetryBuffer);
+            if (bytesReceived > 0) {
+                PktDef telemetryPacket(reinterpret_cast<unsigned char*>(telemetryBuffer));
+                if (telemetryPacket.checkCRC(telemetryBuffer, bytesReceived)) {
+                    telemetry* tm = reinterpret_cast<telemetry*>(telemetryPacket.getBodyData());
+
+                    crow::json::wvalue response;
+                    response["last_pkt_counter"] = tm->LastPktCounter;
+                    response["current_grade"] = tm->CurrentGrade;
+                    response["hit_count"] = tm->HitCount;
+                    response["last_cmd"] = static_cast<int>(tm->LastCmd);
+                    response["last_cmd_value"] = static_cast<int>(tm->LastCmdValue);
+                    response["last_cmd_speed"] = static_cast<int>(tm->LastCmdSpeed);
+
+                    return crow::response(response);
+                }
+            }
+            return crow::response(500, "No telemetry received from robot");
+        }
+        catch (const std::exception& e) {
+            return crow::response(500, std::string("Telemetry request failed: ") + e.what());
+        }
+            });
 }
 
 int main() {
-    crow::SimpleApp app;
-    MySocket* connection = nullptr;
-    PktDef* packet = nullptr;
-    int packetCount = 0;
+    crow::App<crow::CORSHandler> app;
 
-    // Serve the index.html
-    CROW_ROUTE(app, "/")([](const crow::request&, crow::response& res) {
-        sendHtml(res, "index");
-    });
+    // Configure CORS
+    auto& cors = app.get_middleware<crow::CORSHandler>();
+    cors
+        .global()
+        .headers("X-Custom-Header", "Upgrade-Insecure-Requests")
+        .methods("POST"_method, "GET"_method, "PUT"_method)
+        .prefix("/")
+        .origin("*")
+        .prefix("/connect")
+        .origin("*")
+        .prefix("/telecommand")
+        .origin("*")
+        .prefix("/telemetry_request")
+        .origin("*");
 
-    // Route to serve CSS/JS
-    CROW_ROUTE(app, "/css/<string>")([](const crow::request&, crow::response& res, string filename) {
-        sendStyle(res, filename);
-    });
+    initializeWebServer(app);
 
-    CROW_ROUTE(app, "/js/<string>")([](const crow::request&, crow::response& res, string filename) {
-        sendScript(res, filename);
-    });
-
-    // Connect to the robot
-    CROW_ROUTE(app, "/connect/<string>/<int>/<string>").methods(crow::HTTPMethod::Post)
-    ([&connection](const crow::request&, crow::response& res, string ip, int port, string connType) {
-        if (connType == "TCP") {
-            connection = new MySocket(SocketType::CLIENT, ip, port, ConnectionType::TCP, 255);
-        } else {
-            connection = new MySocket(SocketType::CLIENT, ip, port, ConnectionType::UDP, 255);
-        }
-        std::cerr << "[SOCKET] Connected to " << ip << ":" << port << " using " << connType << endl;
-        res.code = 201;
-        res.write("Connected.");
-        res.end();
-    });
-
-    // Telecommand
-    CROW_ROUTE(app, "/telecommand/<string>/<string>/<int>/<int>").methods(crow::HTTPMethod::Post)
-    ([&connection, &packet, &packetCount](const crow::request&, crow::response& res, string cmdStr, string dirStr, int duration, int speed) {
-        if (!connection) {
-            res.code = 500;
-            res.write("Socket not connected.");
-            res.end();
-            return;
-        }
-
-        CMDType cmd;
-        if (cmdStr == "DRIVE") cmd = CMDType::DRIVE;
-        else if (cmdStr == "SLEEP") cmd = CMDType::SLEEP;
-        else if (cmdStr == "RESPONSE") cmd = CMDType::RESPONSE;
-        else {
-            res.code = 400;
-            res.write("Invalid command.");
-            res.end();
-            return;
-        }
-
-        unsigned char direction;
-        if (dirStr == "FORWARD") direction = FORWARD;
-        else if (dirStr == "BACKWARD") direction = BACKWARD;
-        else if (dirStr == "LEFT") direction = LEFT;
-        else if (dirStr == "RIGHT") direction = RIGHT;
-        else direction = 0;
-
-        if (packet) delete packet;
-        packet = new PktDef();
-        packet->setPktCount(++packetCount);
-        packet->setCMD(cmd);
-
-        driveBody body;
-        body.direction = direction;
-        body.duration = (unsigned char)duration;
-        body.speed = (unsigned char)speed;
-        packet->setBodyData((unsigned char*)&body, sizeof(body));
-        unsigned char* raw = packet->genPacket();
-
-        connection->SendData((const char*)raw, packet->getLength());
-
-        if (cmd == CMDType::RESPONSE) {
-            char buffer[1024];
-            int received = connection->GetData(buffer);
-            if (received > 0) {
-                PktDef responsePacket((unsigned char*)buffer);
-                if (responsePacket.checkCRC((unsigned char*)buffer, received)) {
-                    telemetry* t = (telemetry*)responsePacket.getBodyData();
-                    crow::json::wvalue json;
-                    json["LastPktCounter"] = t->LastPktCounter;
-                    json["CurrentGrade"] = t->CurrentGrade;
-                    json["HitCount"] = t->HitCount;
-                    json["LastCmd"] = t->LastCmd;
-                    json["LastCmdValue"] = t->LastCmdValue;
-                    json["LastCmdSpeed"] = t->LastCmdSpeed;
-                    res.code = 200;
-                    res.write(json.dump());
-                } else {
-                    res.code = 500;
-                    res.write("Telemetry CRC check failed.");
-                }
-            } else {
-                res.code = 500;
-                res.write("No telemetry response received.");
-            }
-        } else {
-            res.code = 200;
-            res.write("Command sent.");
-        }
-
-        res.end();
-    });
-
-    app.port(8080).multithreaded().run();
-    return 0;
+    app.port(18080).multithreaded().run();
 }
