@@ -131,7 +131,7 @@ unsigned char* PktDef::genPacket() {
 	RawBuffer = new unsigned char[totalSize];
 
 	memcpy(RawBuffer, &cmdPacket.header, HEADERSIZE);
-	RawBuffer[HEADERSIZE] = cmdPacket.header.length;
+	RawBuffer[HEADERSIZE] = (unsigned char)getCMD();
 
 	if (cmdPacket.Data != nullptr) {
 		memcpy(RawBuffer + HEADERSIZE + 1, cmdPacket.Data, cmdPacket.header.length);

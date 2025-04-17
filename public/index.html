@@ -4,16 +4,86 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Robot Control GUI</title>
-    <link rel="stylesheet" href="/styles/robot-control.css">
-</head>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+    
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    
+        .connection-panel {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+    
+        .control-panel {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+    
+        .telemetry-panel {
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+    
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+    
+        button:hover {
+            background-color: #0056b3;
+        }
+    
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+    
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+    
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+    </style>    
 <body>
     <div class="container">
         <h1>Robot Control GUI</h1>
         
         <div class="connection-panel">
             <h2>Connection Settings</h2>
-            <input type="text" id="robotIP" placeholder="Robot IP Address" value="127.0.0.1">
-            <input type="number" id="robotPort" placeholder="Port" value="8080">
+            <input type="text" id="robotIP" placeholder="Robot IP Address" value="172.24.112.1">
+            <input type="number" id="robotPort" placeholder="Port" value="5000">
             <button onclick="connect()">Connect</button>
             <div id="connectionStatus" class="status"></div>
         </div>
@@ -69,7 +139,7 @@
                     })
                 });
     
-                const data = await response.json();
+                const data = await response.text();
                 const statusDiv = document.getElementById('connectionStatus');
     
                 if (response.ok) {
@@ -171,6 +241,6 @@
                 alert('Error getting telemetry: ' + error);
             }
         }
-    </script>
+    </script>    
 </body>
 </html> 
