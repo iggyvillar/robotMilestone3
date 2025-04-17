@@ -83,47 +83,30 @@ int main() {
     CROW_ROUTE(app, "/")([] {
         return loadFile("../public/index.html");
     });
-
-    // Serve CSS
-    CROW_ROUTE(app, "/styles/<string>")([](string filename) {
-        response res;
-        res.set_header("Content-Type", "text/css");
-        res.write(loadFile("../public/styles/" + filename));
-        return res;
-    });
-
-    // Serve JS
-    CROW_ROUTE(app, "/scripts/<string>")([](string filename) {
-        response res;
-        res.set_header("Content-Type", "application/javascript");
-        res.write(loadFile("../public/scripts/" + filename));
-        return res;
-    });
-
     // Connect route
     CROW_ROUTE(app, "/connect").methods(HTTPMethod::Post)([](const request& req) {
         auto json = crow::json::load(req.body);
         if (!json || !json.has("ip") || !json.has("port"))
-            return response(400, "Invalid connect payload");
+            return response(400, "invalid");
 
         string ip = json["ip"].s();
         int port = json["port"].i();
 
         socketPtr = make_unique<MySocket>(SocketType::CLIENT, ip, port, ConnectionType::UDP, DEFAULT_SIZE);
-        return response(200, "Connected successfully to robot");
+        return response(200, "connected successfully to robot");
     });
 
     // Telecommand (drive / sleep)
     CROW_ROUTE(app, "/telecommand").methods(HTTPMethod::Put)([](const request& req) {
         auto json = crow::json::load(req.body);
         if (!json || !json.has("command"))
-            return response(400, "Missing command field");
+            return response(400, "missing command ");
 
         string command = json["command"].s();
 
         if (command == "drive") {
             if (!json.has("direction") || !json.has("duration") || !json.has("speed"))
-                return response(400, "Missing drive parameters");
+                return response(400, "missing drive params");
 
             unsigned char payload[3];
             payload[0] = (unsigned char)json["direction"].i();
@@ -136,20 +119,20 @@ int main() {
             sendPacket(CMDType::SLEEP);
         }
         else {
-            return response(400, "Unsupported command");
+            return response(400, "command not supported");
         }
 
-        return response(200, "Command sent");
+        return response(200, "command sent");
     });
 
-    // Telemetry request
+    // telemetry req
     CROW_ROUTE(app, "/telemetry_request").methods(HTTPMethod::Get)([](const request&) {
         sendPacket(CMDType::RESPONSE);
 
         char raw[DEFAULT_SIZE];
         int received = socketPtr->GetData(raw);
         if (received <= 0)
-            return response(500, "No telemetry response received");
+            return response(500, "no telemetry response received");
 
         return response(parseTelemetry((unsigned char*)raw, received));
     });

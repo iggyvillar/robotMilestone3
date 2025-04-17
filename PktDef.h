@@ -38,12 +38,12 @@ struct driveBody {
 
 // telemetry struct
 struct telemetry {
-	unsigned short int LastPktCounter;
-	unsigned short int CurrentGrade;
-	unsigned short int HitCount;
-	unsigned char LastCmd;
-	unsigned char LastCmdValue;
-	unsigned char LastCmdSpeed;
+	uint8_t LastPktCounter;
+	uint8_t CurrentGrade;
+	uint8_t HitCount;
+	uint8_t LastCmd;
+	uint8_t LastCmdValue;
+	uint8_t LastCmdSpeed;
 };
 
 class PktDef {

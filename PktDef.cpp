@@ -137,20 +137,19 @@ unsigned char* PktDef::genPacket() {
         delete[] RawBuffer;
 
     int totalSize = cmdPacket.header.length;
-    if (totalSize < HEADERSIZE + 1)  // safety: header + CRC minimum
+    if (totalSize < HEADERSIZE + 1)  
         totalSize = HEADERSIZE + 1;
 
     RawBuffer = new unsigned char[totalSize];
 
-    // Write header
+    // header
     memcpy(RawBuffer, &cmdPacket.header, HEADERSIZE);
 
-    // Only copy body if it's present
     if (cmdPacket.Data != nullptr && totalSize > HEADERSIZE + 1) {
         memcpy(RawBuffer + HEADERSIZE, cmdPacket.Data, totalSize - HEADERSIZE - 1);
     }
 
-    // Calculate and write CRC
+    // calc and write CRC
     calcCRC();
     RawBuffer[totalSize - 1] = cmdPacket.CRC;
 
